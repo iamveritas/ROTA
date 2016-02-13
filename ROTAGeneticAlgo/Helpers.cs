@@ -13,15 +13,16 @@ namespace ROTAGeneticAlgo
             int idx = 0;
             foreach (BoardState board in list)
             {
-                sb.AppendLine(string.Format("{0}\n{1}", ++idx, board.ToString()));
+                sb.AppendLine(string.Format("{0} status: {1}\n{2}", ++idx, board.VerifyBoard(), board.ToString()));
+                //sb.AppendLine(string.Format("{0} status: \n{1}", ++idx, board.ToString()));
             }
             return sb.ToString();
         }
-        public static string ToPrintString(this Dictionary<ulong, List<BoardState>> dict)
+        public static string ToPrintString(this Dictionary<int, List<BoardState>> dict)
         {
             StringBuilder sb = new StringBuilder();
             int idx = 0;
-            foreach (ulong key in dict.Keys)
+            foreach (int key in dict.Keys)
             {
                 sb.AppendLine(string.Format("{0}, count={1}, key={2}\n{3}", ++idx, dict[key].Count, key, dict[key].ToPrintString()));
             }

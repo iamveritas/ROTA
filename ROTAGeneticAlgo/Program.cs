@@ -31,10 +31,60 @@ namespace ROTAGeneticAlgo
             //   1. beginning phase: when the 6 pieces are placed on the board
             //   2. second phase: after the 6 pieces are placed on the board
 
-            Dictionary<ulong, List<BoardState>> boards = BoardState.GenerateAllBoardsForColors(Color.Red, Color.Blue);
-            Console.WriteLine("{0}\n", boards.ToPrintString());
+            //string b2 = "B___R____";
+            //string b1 = "B________";
+            //BoardState testboard1 = new BoardState(b1);
+            //BoardState testboard2 = new BoardState(b2);
+            //int key1 = testboard1.GetBoardKey();
+            //int key2 = testboard2.GetBoardKey();
+            //bool equal = testboard1.IsEquivalent(testboard2, true) || testboard1.IsEquivalent(testboard2, false);
+
+            Dictionary<int, List<BoardState>> boards = new Dictionary<int, List<BoardState>>();
+            boards = BoardState.GenerateAllBoardsForColors(boards, Color.Red, Color.Blue);
+            boards = BoardState.GenerateAllBoardsForColors(boards, Color.Blue, Color.Red);
+            //Console.WriteLine("{0}\n", boards.ToPrintString());
+
+            int errorsCount = 0;
+            foreach (int key in boards.Keys)
+            {
+                int idx = 1;
+                BoardState firstBoard = null;
+                foreach (BoardState board in boards[key])
+                {
+                    if (idx++ == 1)
+                        firstBoard = board;
+                    else
+                        if (!firstBoard.IsEquivalent(board))
+                        {
+                            errorsCount++;
+                            Console.WriteLine("Error {3} {2}: \n{0}\n{1}", firstBoard, board, key, errorsCount);
+                        }
+                }
+                //Console.WriteLine("Verified key={0}, count={1}\n", key, boards[key].Count);
+            }
+            Console.WriteLine("Total keys={0}, Errors={1}\n", boards.Keys.Count, errorsCount);
 
             // [Start] Generate random population of n chromosomes (suitable solutions for the problem)
+            int populationSize = 1000;
+            List<Chromosome> populationRed = new List<Chromosome>(populationSize/2);
+            for (int idx = 0; idx < populationRed.Capacity; idx++)
+            {
+                Chromosome chrom = new Chromosome(Color.Red);
+                foreach (int key in boards.Keys)
+                {
+                    chrom.genes.Add(key, boards[key][0].GenerateRandomValidMove(chrom.PlayerColor));
+                }
+            }
+            List<Chromosome> populationBlue = new List<Chromosome>(populationSize / 2);
+            for (int idx = 0; idx < populationRed.Capacity; idx++)
+            {
+                Chromosome chrom = new Chromosome(Color.Blue);
+                foreach (int key in boards.Keys)
+                {
+                    chrom.genes.Add(key, boards[key][0].GenerateRandomValidMove(chrom.PlayerColor));
+                }
+            }
+
             // [Fitness] Evaluate the fitness f(x) of each chromosome x in the population
             // [New population] Create a new population by repeating following steps until the new population is complete
             // [Selection] Select two parent chromosomes from a population according to their fitness (the better fitness, the bigger chance to be selected)
@@ -48,11 +98,44 @@ namespace ROTAGeneticAlgo
         }
     }
 
-    public enum Color
+    public enum Color : int
     {
-        _Empty = 0,
-        Red = 1,
-        Blue = 2
+        _Empty = 1,
+        Red = 3,
+        Blue = 5
+    }
+
+    public class Chromosome
+    {
+        public Chromosome (Color color)
+        {
+            this.PlayerColor = color;
+        }
+        public Color PlayerColor = Color._Empty;
+        public Dictionary<int, PlayerMove> genes = new Dictionary<int,PlayerMove>();
+    }
+
+    /// <summary>
+    /// If PositionEnd = 0 it means this is a piece placement
+    /// If PositionEnd != it means this is a pieace movement from pos start to pos end
+    /// </summary>
+    public class PlayerMove
+    {
+        public PlayerMove()
+        {
+            this.Color = Color._Empty;
+            this.PositionStart = 0;
+            this.PositionEnd = 0;
+        }
+        public PlayerMove(Color color, int positionStart, int positionEnd)
+        {
+            this.Color = color;
+            this.PositionStart = positionStart;
+            this.PositionEnd = positionEnd;
+        }
+        public Color Color = Color._Empty;
+        public int PositionStart = 0;
+        public int PositionEnd = 0;
     }
 
     public class Position
@@ -75,11 +158,11 @@ namespace ROTAGeneticAlgo
     public sealed class BoardState
     {
         private CircularLinkedList<Position> rotaLine = null;
-        private Color rotaCenter = 0;
+        private Color rotaCenter = Color._Empty;
 
         public BoardState()
         {
-            this.rotaCenter = 0;
+            this.rotaCenter = Color._Empty;
             this.rotaLine = new CircularLinkedList<Position>();
             // initialize the board as empty
             for (int count=1; count <= 8; count++)
@@ -88,6 +171,61 @@ namespace ROTAGeneticAlgo
             }
         }
 
+        // B___R____
+        public BoardState(string boardStrRepresantation)
+        {
+            this.rotaLine = new CircularLinkedList<Position>();
+            int delta = 0;
+            for (int idx = 1; idx <= boardStrRepresantation.Count(); idx++)
+            {
+                Color currentColor = Color._Empty;
+                switch (boardStrRepresantation[idx-1])
+                {
+                    case 'R': currentColor = Color.Red;
+                        break;
+                    case 'B': currentColor = Color.Blue;
+                        break;
+                    case '_': currentColor = Color._Empty;
+                        break;
+                    default:
+                        throw new ApplicationException("Wrong board state representation");
+                }
+                if (idx == 5)
+                {
+                    this.rotaCenter = currentColor;
+                    delta = 1;
+                }
+                else
+                {
+                    this.rotaLine.AddLast(new Position(idx-delta, currentColor));
+                }
+            }
+        }
+        /// <summary>
+        /// constructs a board from a key
+        /// </summary>
+        /// <param name="key"></param>
+        public BoardState(int key)
+        {
+            // 18 bits: pairs of two, values 00, 01, 10 for empty, red, blue
+            int val = 3;
+            switch (key & (val << 16))
+            {
+                case 0: this.rotaCenter = Color._Empty; break;
+                case 1: this.rotaCenter = Color.Red; break;
+                case 2: this.rotaCenter = Color.Blue; break;
+            }
+            for (int idx = 8; idx > 0; idx --)
+            {
+                val = 3;
+                switch (key & (val << ((idx-1) * 2)))
+                {
+                    case 0: this.rotaLine.AddLast(new Position(9-idx, Color._Empty)); break;
+                    case 1: this.rotaLine.AddLast(new Position(9-idx, Color.Red)); break;
+                    case 2: this.rotaLine.AddLast(new Position(9-idx, Color.Blue)); break;
+                }
+            }
+        }
         // Copy Ctor
         public BoardState(BoardState board)
         {
@@ -103,7 +241,7 @@ namespace ROTAGeneticAlgo
             while (node != board.rotaLine.Head);
         }
 
-        public override string ToString()
+        public string ToString2()
         {
             StringBuilder sb = new StringBuilder();
 
@@ -127,31 +265,163 @@ namespace ROTAGeneticAlgo
             return sb.ToString();
         }
 
-        public static Dictionary<ulong, List<BoardState>> GenerateAllBoardsForColors(Color firstColor, Color secondColor)
+        public override string ToString()
         {
-            Dictionary<ulong, List<BoardState>> allBoards = new Dictionary<ulong, List<BoardState>>();
-            BoardState board = new BoardState();
+            StringBuilder sb = new StringBuilder();
 
-            board.ToString();
+            Node<Position> node = this.rotaLine.Head;
+            int index = 1;
+            do
+            {
+                if (index == 5)
+                {
+                    sb.AppendFormat("{0}", this.rotaCenter.ToString().ToCharArray()[0]);
+                    index++;
+                }
+                sb.AppendFormat("{0}", node.Value.Col.ToString().ToCharArray()[0]);
+
+                node = node.Next;
+                index++;
+            }
+            while (node != this.rotaLine.Head);
+            return sb.ToString();
+        }
+
+        private int GetPiecesCount(List<int> openRed, List<int> openBlue, List<int> openPos)
+        {
+            openRed = new List<int>();
+            openBlue = new List<int>();
+            openPos = new List<int>();
+            if (this.rotaCenter == Color.Red)
+                openRed.Add(0);
+            if (this.rotaCenter == Color.Blue)
+                openBlue.Add(0);
+            if (this.rotaCenter == Color._Empty)
+                openPos.Add(0);
+            Node<Position> node = this.rotaLine.Head;
+            do
+            {
+                if (node.Value.Col == Color.Red)
+                    openRed.Add(node.Value.Pos);
+                if (node.Value.Col == Color.Blue)
+                    openBlue.Add(node.Value.Pos);
+                if (node.Value.Col == Color._Empty)
+                    openPos.Add(node.Value.Pos);
+            }
+            while (node != this.rotaLine.Head);
+            return openBlue.Count() + openRed.Count();
+        }
+        public PlayerMove GenerateRandomValidMove(Color playerColor)
+        {
+            PlayerMove pm = new PlayerMove();
+            pm.Color = playerColor;
+            
+            List<int> openPos = null, redPos = null, bluePos = null;
+            int countOfPieces = GetPiecesCount(redPos, bluePos, openPos);
+
+            if (countOfPieces == 6)
+            {
+                Random rand = new Random(DateTime.UtcNow.Millisecond);
+                int randNumber = 1 + rand.Next(9999) % 3;
+
+                if (playerColor == Color.Red)
+                {
+                    pm.PositionStart = redPos[randNumber];
+                }
+                if (playerColor == Color.Blue)
+                {
+                    pm.PositionStart = bluePos[randNumber];
+                }
+                // TO DO: find a random valid the pm.PositionEnd from pm.PositionStart
+
+            }
+            else
+            {
+
+            }
+            return pm;
+        }
+
+        public static Dictionary<int, List<BoardState>> GenerateAllBoardsForColors(Dictionary<int, List<BoardState>> allBoards, Color firstColor, Color secondColor)
+        {
+            BoardState board = new BoardState();
 
             // place the first piece
             board.rotaCenter = firstColor;
             List<BoardState> list = new List<BoardState>();
             BoardState firstBoard = new BoardState(board);
             list.Add(firstBoard);
-            allBoards.Add(firstBoard.GetBoardUniqueKey(), list);
+            allBoards.Add(firstBoard.GetBoardKey(), list);
 
             Color[] pieces = new Color[5]{ secondColor, firstColor, secondColor, firstColor, secondColor };
-
-            GenerateAllBoardsForPieces(allBoards, board, pieces);
+            GenerateAllBoardsUniquelyForPieces(allBoards, board, pieces);
 
             pieces = new Color[6] { firstColor, secondColor, firstColor, secondColor, firstColor, secondColor };
-            GenerateAllBoardsForPieces(allBoards, new BoardState(), pieces);
+            GenerateAllBoardsUniquelyForPieces(allBoards, new BoardState(), pieces);
             
             return allBoards;
         }
 
-        private static void GenerateAllBoardsForPieces(Dictionary<ulong, List<BoardState>> allBoards, BoardState board, Color[] pieces)
+        private static void GenerateAllBoardsUniquelyForPieces(Dictionary<int, List<BoardState>> allBoards, BoardState board, Color[] pieces)
+        {
+            if (pieces.Count() <= 0)
+                return;
+
+            Color currentPiece = pieces[0];
+            Color[] remainingPieces = new Color[pieces.Count() - 1];
+
+            for (int idx = 1; idx < pieces.Count(); idx++)
+                remainingPieces[idx - 1] = pieces[idx];
+
+            Node<Position> node = board.rotaLine.Head;
+            do
+            {
+                // if empty spot then ocupy it
+                if (node.Value.Col == Color._Empty)
+                {
+                    node.Value.Col = currentPiece;
+                    BoardState newBoard = new BoardState(board);
+                    int key = newBoard.GetBoardKey();
+
+                    // go through existing keys and see if any is IsEquivalent with the one we want to add
+                    bool keyFound = false;
+                    foreach (int existingKey in allBoards.Keys)
+                    {
+                        if (newBoard.IsEquivalent(allBoards[existingKey][0]))
+                        {
+                            keyFound = true;
+
+                            // add it to the queue and watch the duplicates duplicates
+                            bool foundBoard = false;
+                            foreach (BoardState bs in allBoards[existingKey])
+                            {
+                                if (bs.rotaCenter == newBoard.rotaCenter && bs.ToString() == newBoard.ToString())
+                                {
+                                    foundBoard = true;
+                                    break;
+                                }
+                            }
+                            if (!foundBoard)
+                                allBoards[existingKey].Add(newBoard);
+                            break;
+                        }
+                    }
+                    if (!keyFound)
+                    {
+                        List<BoardState> list = new List<BoardState>();
+                        list.Add(newBoard);
+                        allBoards.Add(key, list);
+                    }
+                    //GenerateAllBoardsUniquelyForPieces(allBoards, board, remainingPieces);
+                    GenerateAllBoardsUniquelyForPieces(allBoards, newBoard, remainingPieces);
+                    node.Value.Col = Color._Empty;
+                }
+                node = node.Next;
+            }
+            while (node != board.rotaLine.Head);
+        }
+
+        private static void __GenerateAllBoardsForPieces(Dictionary<int, List<BoardState>> allBoards, BoardState board, Color[] pieces)
         {
             if (pieces.Count() <= 0)
                 return;
@@ -170,7 +440,7 @@ namespace ROTAGeneticAlgo
                 {
                     node.Value.Col = currentPiece;
                     BoardState newBoard = new BoardState(board);
-                    ulong key = newBoard.GetBoardUniqueKey();
+                    int key = newBoard.GetBoardKey();
                     if (!allBoards.Keys.Contains(key))
                     {
                         List<BoardState> list = new List<BoardState>();
@@ -179,9 +449,10 @@ namespace ROTAGeneticAlgo
                     }
                     else
                     {
-                        allBoards[key].Add(newBoard); ;
+                        allBoards[key].Add(newBoard);
                     }
-                    GenerateAllBoardsForPieces(allBoards, board, remainingPieces);
+                    __GenerateAllBoardsForPieces(allBoards, newBoard, remainingPieces);
+                    __GenerateAllBoardsForPieces(allBoards, board, remainingPieces);
                     node.Value.Col = Color._Empty;
                 }
                 node = node.Next;
@@ -189,150 +460,290 @@ namespace ROTAGeneticAlgo
             while (node != board.rotaLine.Head);
         }
 
+        public int GetBoardKey()
+        {
+            return GetUInt32Key();
+
+            //return GetKey();
+            //int keyCenter = 31 * this.rotaCenter; // center
+            //return keyCenter * GetBoardUniqueKey() * GetBoardUniqueKeyPerColor(Color.Red) * GetBoardUniqueKeyPerColor(Color.Blue);
+        }
+
+        private int GetUInt32Key()
+        {
+            int key = 0;
+
+            if (this.rotaCenter == Color.Red)
+                key |= 1;
+            if (this.rotaCenter == Color.Blue)
+                key |= 2;
+            key = key << 16;
+
+            Node<Position> node = this.rotaLine.Head;
+            do
+            {
+                int val = 0;
+                if (node.Value.Col == Color.Red)
+                    val |= 1;
+                if (node.Value.Col == Color.Blue)
+                    val |= 2;
+                val = val << ((8-node.Value.Pos) * 2);
+                key |= val;
+
+                node = node.Next;
+            }
+            while (node != this.rotaLine.Head);
+
+            return key;
+        }
+
+        private int GetKey()
+        {
+            int minKey = GetKey(true);
+            int secondKey = GetKey(false);
+            if (minKey > secondKey)
+                minKey = secondKey;
+            return minKey;
+        }
         /// <summary>
-        /// this key is calculated based on the distance between each pieces of the same color
+        /// the rotaLine is circled 8 times starting from each position 
+        /// each position has a unique prime number assigned
+        /// each piece color has assigned a unique prime number
+        /// after each circle a big number is computed, chose the smaller one as the key 
         /// center 31
-        /// pos 1, 2, 3, ...8 = 5, 7, 11, 13, 17, 19, 23, 29
+        /// </summary>
+        /// <returns></returns>
+        private int GetKey(bool next)
+        {
+            int key = 1, keyCenter = 1;
+            int position = 0, origBluePieceIndex = 0, origRedPieceIndex = 0;
+            int minKey = int.MaxValue;
+            Node<Position> node = this.rotaLine.Head;
+
+            if (this.rotaCenter == Color.Red)
+            {
+                keyCenter *= GetPrimaryForColor(this.rotaCenter, ++origRedPieceIndex) * GetPrimaryForPosition(9);
+            }
+            if (this.rotaCenter == Color.Blue)
+            {
+                keyCenter *= GetPrimaryForColor(this.rotaCenter, ++origBluePieceIndex) * GetPrimaryForPosition(9);
+            }
+            
+            do
+            {
+                Node<Position> startNode = node;
+                int bluePieceIndex = origBluePieceIndex, redPieceIndex = origRedPieceIndex;
+                position = 1;
+                key = 1;
+                do
+                {
+                    if (startNode.Value.Col == Color.Red)
+                    {
+                        key *= GetPrimaryForColor(startNode.Value.Col, ++redPieceIndex) * GetPrimaryForPosition(position);
+                    }
+                    if (startNode.Value.Col == Color.Blue)
+                    {
+                        key *= GetPrimaryForColor(startNode.Value.Col, ++bluePieceIndex) * GetPrimaryForPosition(position);
+                    }
+                    startNode = next ? startNode.Next : startNode.Previous;
+                    ++position;
+                }
+                while (node != startNode);
+
+                if (key < minKey)
+                    minKey = key;
+
+                node = node.Next;
+            }
+            while (node != this.rotaLine.Head);
+
+            return minKey * keyCenter;
+        }
+
+        /// <summary>
+        /// this key a is calculated based on the distance between each piece and the alternation of the colors, 
+        /// always starting to rotate around the board line from a piece colored red
+        /// center 31
         /// red = 2
         /// blue = 3
         /// empty = 1
         /// </summary>
         /// <returns></returns>
-        public ulong GetBoardUniqueKey()
+        private int GetBoardUniqueKey()
         {
-            ulong key = 31;
-            switch (this.rotaCenter)
-            {
-                case Color.Red: key *= 2;
-                    break;
-                case Color.Blue: key *= 3;
-                    break;
-                default: key *= 1;
-                    break;
-            }
-
+            int key = 1;
             int distance = 0;
             Node<Position> node = this.rotaLine.Head;
             Color currentColor = Color._Empty;
-            bool firstRed = false;
+            bool firstFound = false;
             do
             {
-                if (!firstRed || node.Value.Col != Color._Empty)
+                if (node.Value.Col != Color._Empty)
                 {
-                    if (node.Value.Col == Color.Red)
-                        firstRed = true;
-                    if (node.Value.Col != currentColor)
-                        currentColor = node.Value.Col;
-                    switch (distance)
-                    {
-                        case 1:
-                        case 7:
-                            key *= 5;
-                            break;
-                        case 2:
-                        case 6:
-                            key *= 7;
-                            break;
-                        case 3:
-                        case 5:
-                            key *= 11;
-                            break;
-                        case 4: key *= 13;
-                            break;
-                        case 8: key *= 17;
-                            break;
-                        default: key *= 0; // TO DO: signal thi bug in a nicer way
-                            break;
-                    }
-                    switch (node.Value.Col)
-                    {
-                        case Color.Red: key *= 2;
-                            break;
-                        case Color.Blue: key *= 3;
-                            break;
-                        default: key *= 1;
-                            break;
-                    }
+                    firstFound = true;
+                    // chime in the starting piece color, 5 will be used as the stargin piece
+                    currentColor = node.Value.Col;
+                    key *= GetPrimaryForDistance(distance) * GetPrimaryForColor(currentColor, 1) * 5;
+                    break;
                 }
                 node = node.Next;
             }
             while (node != this.rotaLine.Head);
 
+            if (firstFound)
+            {
+                Node<Position> startNode = node;
+                node = node.Next;
+                distance = 1;
+                do
+                {
+                    if (node.Value.Col != Color._Empty)
+                    {
+                        if (node.Value.Col != currentColor)
+                        {
+                            currentColor = node.Value.Col;
+                        }
+                        key *= GetPrimaryForDistance(distance) * GetPrimaryForColor(currentColor, 1);
+                        distance = 0;
+                    }
+                    node = node.Next;
+                    distance++;
+                }
+                while (node != startNode);
+
+                key *= GetPrimaryForDistance(distance) * GetPrimaryForColor(currentColor, 1);
+            }
+
             return key;
         }
 
-        private int CalculateKeyForColor(Color color)
+        /// <summary>
+        /// this key a is calculated based on the distance between each piece of the same color, 
+        /// always starting to rotate around the board line from a piece colored red
+        /// center 31
+        /// red = 2
+        /// blue = 3
+        /// empty = 1
+        /// </summary>
+        /// <returns></returns>
+        public int GetBoardUniqueKeyPerColor(Color color)
         {
-            int key = 1;
+            int key = 1; 
             int distance = 0;
-            bool firstNode = true;
             Node<Position> node = this.rotaLine.Head;
+            Color currentColor = Color._Empty;
+            bool firstFound = false;
             do
             {
                 if (node.Value.Col == color)
                 {
-                    if (firstNode)
-                    {
-                        firstNode = false;
-                    }
-                    else
-                    {
-                        key *= GetPrimeBasedOnDistance(distance, color);
-                    }
-                    distance = 0;
+                    firstFound = true;
+                    // chime in the starting piece color, 5 will be used as the stargin piece
+                    currentColor = node.Value.Col;
+                    key *= GetPrimaryForDistance(distance, 2) * GetPrimaryForColor(currentColor, 1) * 5;
+                    break;
                 }
                 node = node.Next;
-                distance++;
             }
             while (node != this.rotaLine.Head);
 
-            if (firstNode)
+            if (firstFound)
             {
-                key *= GetPrimeBasedOnDistance(distance, color);
+                Node<Position> startNode = node;
+                node = node.Next;
+                distance = 1;
+                do
+                {
+                    if (node.Value.Col == color)
+                    {
+                        if (node.Value.Col != currentColor)
+                        {
+                            currentColor = node.Value.Col;
+                        }
+                        key *= GetPrimaryForDistance(distance, 2) * GetPrimaryForColor(currentColor, 2);
+                        distance = 0;
+                    }
+                    node = node.Next;
+                    distance++;
+                }
+                while (node != startNode);
+
+                key *= GetPrimaryForDistance(distance, 2) * GetPrimaryForColor(currentColor, 2);
             }
+
             return key;
         }
-
-        private int GetPrimeBasedOnDistance(int distance, Color color)
+        private int GetPrimaryForColor(Color color, int pieceIndex)
         {
-            /// if distance between two pieces of red  is 1, 2, ..., 6, 7, 8 then these prime numbers are used 3, 5, 7, 11, 13, 17, 19, 23
-            /// if distance between two pieces of blue is 1, 2, ..., 6, 7, 8 then these prime numbers are used 29, 31, 37, 41, 43, 47, 53, 59
-            if (color == Color.Red)
-                switch (distance)
-                {
-                    case 1: return 3;
-                    case 2: return 5;
-                    case 3: return 7;
-                    case 4: return 11;
-                    case 5: return 13;
-                    case 6: return 17;
-                    case 7: return 19;
-                    case 8: return 23;
-                    default:
-                        // TO DO: signale it, log it in a nicer way
-                        Console.WriteLine("BUG BUG BUG! there's a bug in calculating the distance 1");
-                        return 0; // this should never happen
-                }
-            if (color == Color.Blue)
-                switch (distance)
-                {
-                    case 1: return 29;
-                    case 2: return 31;
-                    case 3: return 37;
-                    case 4: return 41;
-                    case 5: return 43;
-                    case 6: return 47;
-                    case 7: return 53;
-                    case 8: return 59;
-                    default:
-                        // TO DO: signale it, log it in a nicer way
-                        Console.WriteLine("BUG BUG BUG! there's a bug in calculating the distance 2");
-                        return 0; // this should never happen
-                }
-            // TO DO: signale it, log it in a nicer way
-            Console.WriteLine("BUG BUG BUG! there's a bug in calculating the distance 3");
-            return 0; // this should never happen
+            switch (color)
+            {
+                case Color.Blue:
+                    switch (pieceIndex)
+                    {
+                        case 1: return 3;
+                        case 2: return 5;
+                        case 3: return 7;
+                        default: return 1;
+                    };
+                case Color.Red:
+                    switch (pieceIndex)
+                    {
+                        case 1: return 11;
+                        case 2: return 13;
+                        case 3: return 17;
+                        default: return 1;
+                    };
+                default: return 1;
+            }
         }
+        private int GetPrimaryForPosition(int distance)
+        {
+            switch (distance)
+            {
+                case 1: return 17;
+                case 2: return 19;
+                case 3: return 23;
+                case 4: return 29;
+                case 5: return 31;
+                case 6: return 37;
+                case 7: return 41;
+                case 8: return 43;
+                case 9: return 47; // center
+                default: return 0; // TO DO: signal thi bug in a nicer way
+            }
+        }
+        private int GetPrimaryForDistance(int distance, int? variant = null)
+        {
+            if (!variant.HasValue)
+                switch (distance)
+                {
+                    case 0: return 7;
+                    case 1:
+                    case 7: return 11;
+                    case 2:
+                    case 6: return 13;
+                    case 3:
+                    case 5: return 17;
+                    case 4: return 19;
+                    case 8: return 23;
+                    default: return 0; // TO DO: signal thi bug in a nicer way
+                }
+            else
+                switch (distance)
+                {
+                    case 0: return 37;
+                    case 1:
+                    case 7: return 41;
+                    case 2:
+                    case 6: return 43;
+                    case 3:
+                    case 5: return 47;
+                    case 4: return 53;
+                    case 8: return 59;
+                    default: return 0; // TO DO: signal thi bug in a nicer way
+                }
+        }
+
         /// <summary>
         /// Verify and returns this board state
         /// </summary>
@@ -347,12 +758,16 @@ namespace ROTAGeneticAlgo
             do
             {
                 //1. look at three consecutive nodes
-                state = (int)node.Value.Col & (int)node.Next.Value.Col & (int)node.Next.Value.Col;
+                state = ((node.Value.Col != Color._Empty) &&
+                         (node.Value.Col == node.Next.Value.Col) && 
+                         (node.Next.Value.Col == node.Next.Next.Value.Col)) ? (int)node.Value.Col : 0;
                 if (state != 0)
                     return state;
 
                 // 2. look at the current node, oposite node from rotaLine and center
-                state = (int)node.Value.Col & (int)node.Next.Next.Next.Next.Next.Value.Col & (int)rotaCenter;
+                state = ((node.Value.Col != Color._Empty) &&
+                         (node.Value.Col == node.Next.Next.Next.Next.Value.Col) &&
+                         node.Value.Col == rotaCenter) ? (int)node.Value.Col : 0;
                 if (state != 0)
                     return state;
 
@@ -399,14 +814,23 @@ namespace ROTAGeneticAlgo
             }
             return equal;
         }
+        public bool IsEquivalent(BoardState board)
+        {
+            return IsEquivalent(board, true) || IsEquivalent(board, false);
+        }
         /// <summary>
         /// This function finds out if two boards are identical if one is kept fixed (board) and the other (this) is rotated up to a full cycle, 7 steps that is
         /// </summary>
         /// <param name="board"></param>
         /// <returns></returns>
-        public bool SimetricallyEqual(BoardState board)
+        public bool IsEquivalent(BoardState board, bool next)
         {
             bool equal = false;
+
+            if (this.rotaCenter != board.rotaCenter)
+            {
+                return false;
+            }
 
             // start rotating this board with head position
             Node<Position> thisNode = this.rotaLine.Head;
@@ -417,19 +841,19 @@ namespace ROTAGeneticAlgo
                 bool boardsEqual = true;
                 do
                 {
-                    if (boardPivot.Value != thisPivot.Value)
+                    if (boardPivot.Value.Col != thisPivot.Value.Col)
                     {
                         boardsEqual = false;
                         break;
                     }
                     else
                     {
-                        thisPivot = thisPivot.Next;
+                        thisPivot = next ? thisPivot.Next : thisPivot.Previous;
                         boardPivot = boardPivot.Next;
                     }
                 }
-                while (boardPivot != board.rotaLine.Head && thisPivot != this.rotaLine.Head);
-                if (boardsEqual && (boardPivot != board.rotaLine.Head || thisPivot != this.rotaLine.Head))
+                while (boardPivot != board.rotaLine.Head);
+                if (boardsEqual && boardPivot != board.rotaLine.Head)
                 {
                     // TO DO: Report this bug
                     Console.WriteLine("BUG BUG BUG! boards with different size!");
